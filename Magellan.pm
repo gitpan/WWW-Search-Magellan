@@ -1,6 +1,6 @@
 # Magellan.pm
 # Copyright (c) 1998 by Martin Thurn
-# $Id: Magellan.pm,v 1.19 2000/05/22 16:22:59 mthurn Exp $
+# $Id: Magellan.pm,v 1.20 2000/11/13 17:12:28 mthurn Exp $
 
 =head1 NAME
 
@@ -52,6 +52,10 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 =head1 VERSION HISTORY
 
+=head2 2.07, 2000-11-13
+
+handle new output format; rewrite using HTML::TreeBuilder
+
 =head2 2.06, 2000-05-22
 
 new output format (deleted percent scores)
@@ -96,12 +100,14 @@ require Exporter;
 @EXPORT = qw();
 @EXPORT_OK = qw();
 @ISA = qw(WWW::Search Exporter);
-$VERSION = '2.06';
+$VERSION = '2.07';
 $MAINTAINER = 'Martin Thurn <MartinThurn@iname.com>';
 
 use Carp ();
-use WWW::Search(generic_option);
-require WWW::SearchResult;
+use HTML::Form;
+use HTML::TreeBuilder;
+use WWW::Search qw(generic_option);
+use WWW::SearchResult;
 
 # private
 sub native_setup_search
@@ -126,7 +132,7 @@ sub native_setup_search
   $native_query =~ s/(\w)\0452A\053/$1\053/g;
   $native_query =~ s/(\w)\0452A$/$1/g;
 
-  if (!defined($self->{_options})) 
+  if (!defined($self->{_options}))
     {
     $self->{_options} = {
                          'look' => 'magellan',
@@ -138,10 +144,10 @@ sub native_setup_search
                         };
     } # if
   my $options_ref = $self->{_options};
-  if (defined($native_options_ref)) 
+  if (defined($native_options_ref))
     {
     # Copy in new options.
-    foreach (keys %$native_options_ref) 
+    foreach (keys %$native_options_ref)
       {
       $options_ref->{$_} = $native_options_ref->{$_};
       } # foreach
@@ -161,112 +167,110 @@ sub native_setup_search
 sub native_retrieve_some
   {
   my ($self) = @_;
-  
+
   # Fast exit if already done:
   return undef unless defined($self->{_next_url});
-  
+
   # If this is not the first page of results, sleep so as to not overload the server:
   $self->user_agent_delay if 1 < $self->{'_next_to_retrieve'};
-  
+
+  my $sBaseURL = $self->{_next_url};
   # Get some results, adhering to the WWW::Search mechanism:
-  print STDERR " *   sending request (",$self->{_next_url},")\n" if $self->{'_debug'};
-  my($response) = $self->http_request('GET', $self->{_next_url});
+  print STDERR " *   sending request ($sBaseURL)\n" if $self->{'_debug'};
+  my($response) = $self->http_request('GET', $sBaseURL);
   $self->{response} = $response;
-  if (!$response->is_success) 
+  if (!$response->is_success)
     {
     return undef;
-    };
+    }
 
   print STDERR " *   got response\n" if $self->{'_debug'};
   $self->{'_next_url'} = undef;
+
   # Parse the output
-  my ($HEADER1,$HEADER2, $HITS,$PERCENT,$H3, $DESC, $TRAILER) = qw(E1 E2 HH PE H3 DE TR);
-  my $hits_found = 0;
-  my $state = $HEADER1;
-  my $hit;
-  foreach ($self->split_lines($response->content())) 
-    {
-    next if m/^$/; # short circuit for blank lines
-    print STDERR " *   $state ===$_===" if 2 <= $self->{'_debug'};
-    if ($state eq $HEADER1 && 
-        m{<b>(\d+)</b>\sresults\sreturned}i)
-      {
-      # Actual line of input is:
-      # <B>377</B> results returned, ranked by relevance.
-      # <!--<b>3457804</b> results returned, ranked by relevance.-->
-      print STDERR "header line\n" if 2 <= $self->{'_debug'};
-      $self->approximate_result_count($1);
-      $state = $HITS;
-      next;
-      } # we're in HEADER mode, and line has number of results
-    elsif ($state eq $PERCENT &&
-           m{^(\d+)\%$})
-      {
-      print STDERR "hit percent line\n" if 2 <= $self->{'_debug'};
-      # Actual line of input is:
-      # 75%
-      $hit->score($1);
-      $state = $HITS;
-      next;
-      }
-    elsif ($state eq $HITS && 
-           m{^<A\sHREF=\"([^\"]+)\"\>([^\<]+)}i)
+  my $tree = new HTML::TreeBuilder;
+  $tree->parse($response->content);
+  $tree->eof;
 
+  # All the results are in the fourth <table>:
+  my @aoTABLE = $tree->look_down('_tag', 'table');
+  my $oTABLE = $aoTABLE[2];
+  # print STDERR " + TABLE =====", $oTABLE->as_HTML, "=====\n";
+
+  # The result count is in the first (strict sub)table:
+  my @aoTABLEsub = $oTABLE->look_down('_tag', 'table');
+  # look_down returns $oTABLE as the first one found:
+  shift @aoTABLEsub;
+  my $oTABLEsub = $aoTABLEsub[0];
+  # print STDERR " + SUBTABLE =====", $oTABLEsub->as_text, "=====\n";
+  if ($oTABLEsub->as_text =~ m!web site results of ([\d,]+) for!i)
+    {
+    my $iCount = $1;
+    $iCount =~ s/,//g;
+    $self->approximate_result_count($iCount);
+    } # if
+  # The next button is in a FORM within this main table:
+  my $oFORM = $oTABLE->look_down('_tag', 'form');
+  if (ref($oFORM))
+    {
+    my $sForm = $oFORM->as_HTML;
+    # print STDERR " + FORM == $sForm" if 1 < $self->{'_debug'};
+    my $oForm = HTML::Form->parse($sForm, $sBaseURL);
+    my $oNextButton = $oForm->find_input('next');
+    if (ref($oNextButton))
       {
-      print STDERR "hit url line\n" if 2 <= $self->{'_debug'};
-      # Actual line of input:
-      #   <B><A HREF="http://www.tez.net/~arthurd/starwars.html">The Star Wars List of Links</A></B>&nbsp;&nbsp;&nbsp;
-      # Sometimes there is an \r and/or \n before the </A>
-      if (defined($hit))
+      # print STDERR " +   NEXT == ", $oNextButton, "\n" if 1 < $self->{'_debug'};
+      $self->{_next_url} = new $HTTP::URI_CLASS($oNextButton->click($oForm)->uri);
+      # print STDERR " +   URL  == ", $self->{_next_url}, "\n" if 1 < $self->{'_debug'};
+      } # if
+    $oFORM->delete;
+    } # if
+
+  # Delete all sub-tables:
+  foreach my $oTABLEsub (@aoTABLEsub)
+    {
+    $oTABLEsub->detach;
+    $oTABLEsub->delete;
+    } # foreach
+
+  # print STDERR " + MAIN TABLE =====", $oTABLE->as_HTML, "=====\n";
+  my $oFONT = $oTABLE->look_down('_tag', 'font');
+  while ($oFONT->content_list)
+    {
+    my @ao = $oFONT->splice_content(0, 1);
+    my $o = shift @ao;
+    # print STDERR " +   CONTENT ===", $o, "===\n";
+    if (ref($o) && ($o->tag eq 'b') && (my $oA = $o->look_down('_tag', 'a')))
+      {
+      $sURL = $oA->attr('href');
+      $sTitle = $oA->as_text;
+      # Look ahead to the second chunk of plain text:
+      while (ref($o) && $oFONT->content_list)
         {
+        my @ao = $oFONT->splice_content(0, 1);
+        $o = shift @ao;
+        } # while
+      $o = new HTML::Element('dummy');
+      while (ref($o) && $oFONT->content_list)
+        {
+        my @ao = $oFONT->splice_content(0, 1);
+        $o = shift @ao;
+        } # while
+      if (!ref($o) && ($o ne ''))
+        {
+        $sDesc = $o;
+        my $hit = new WWW::SearchResult;
+        $hit->add_url($sURL);
+        $hit->title($sTitle);
+        $hit->description($sDesc);
         push(@{$self->{cache}}, $hit);
+        $self->{'_num_hits'}++;
+        $hits_found++;
         } # if
-      $hit = new WWW::SearchResult;
-      $hit->add_url($1);
-      $hit->title($2);
-      $self->{'_num_hits'}++;
-      $hits_found++;
-      $state = $DESC;
-      }
-    elsif ($state eq $DESC &&
-          m{^<font.+?>(.+?)</font>$})
-      {
-      print STDERR "hit description line\n" if 2 <= $self->{'_debug'};
-      $hit->description($1);
-      $state = $HITS;
-      } # line is description
-    elsif ($state eq $HITS && m{\<input\s.*?\sVALUE=\"Next\sResults\"}i)
-      {
-      print STDERR " found next button\n" if 2 <= $self->{'_debug'};
-      # Actual lines of input are:
-      #              <input value="Next Results" type="submit" name="next">
-      #              <INPUT TYPE=submit NAME=next VALUE="Next Results">
-      # There is a "next" button on this page, therefore there are
-      # indeed more results for us to go after next time.
-      # Process the options.
-      $self->{'_next_to_retrieve'} += $self->{'_hits_per_page'};
-      $self->{'_options'}{'start'} = $self->{'_next_to_retrieve'};
-      # Finally, figure out the url.
-      $self->{_next_url} = $self->{_options}{'search_url'} .'?'. $self->hash_to_cgi_string($self->{_options});
-      $state = $TRAILER;
-      last;
-      }
-    else
-      {
-      print STDERR "didn't match\n" if 2 <= $self->{'_debug'};
-      }
-    } # foreach line of query results HTML page
-
-  if ($state ne $TRAILER)
-    {
-    # End, no "next" page (or, some parsing error on this page)
-    $self->{_next_url} = undef;
-    }
-  if (defined($hit)) 
-    {
-    push(@{$self->{cache}}, $hit);
-    }
-  
+      } # if
+    } # foreach
+  $oFONT->delete;
+  $tree->delete;
   return $hits_found;
   } # native_retrieve_some
 

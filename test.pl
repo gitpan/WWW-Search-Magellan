@@ -46,7 +46,7 @@ else
 
 # This query returns 1 page of results:
 $iTest++;
-my $sQuery = '"Martin Thu'.'rn" AND Kenn'.'er';
+my $sQuery = '"Ma'.'rtin Thu'.'rn" AND Galo'.'ob';
 $oSearch->native_query(WWW::Search::escape_query($sQuery));
 @aoResults = $oSearch->results();
 $iResults = scalar(@aoResults);
