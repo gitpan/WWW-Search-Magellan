@@ -1,6 +1,6 @@
 # Magellan.pm
 # Copyright (c) 1998 by Martin Thurn
-# $Id: Magellan.pm,v 1.20 2000/11/13 17:12:28 mthurn Exp $
+# $Id: Magellan.pm,v 1.21 2000/12/11 14:47:06 mthurn Exp $
 
 =head1 NAME
 
@@ -52,6 +52,10 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 =head1 VERSION HISTORY
 
+=head2 2.08, 2000-12-11
+
+more robust parsing
+
 =head2 2.07, 2000-11-13
 
 handle new output format; rewrite using HTML::TreeBuilder
@@ -100,7 +104,7 @@ require Exporter;
 @EXPORT = qw();
 @EXPORT_OK = qw();
 @ISA = qw(WWW::Search Exporter);
-$VERSION = '2.07';
+$VERSION = '2.08';
 $MAINTAINER = 'Martin Thurn <MartinThurn@iname.com>';
 
 use Carp ();
@@ -203,7 +207,11 @@ sub native_retrieve_some
   shift @aoTABLEsub;
   my $oTABLEsub = $aoTABLEsub[0];
   # print STDERR " + SUBTABLE =====", $oTABLEsub->as_text, "=====\n";
-  if ($oTABLEsub->as_text =~ m!web site results of ([\d,]+) for!i)
+  if (! ref $oTABLEsub)
+    {
+    print STDERR " --- can not find result-count subtable\n" if 1 < $self->{'_debug'};
+    }
+  elsif ($oTABLEsub->as_text =~ m!web site results of ([\d,]+) for!i)
     {
     my $iCount = $1;
     $iCount =~ s/,//g;
@@ -235,6 +243,7 @@ sub native_retrieve_some
 
   # print STDERR " + MAIN TABLE =====", $oTABLE->as_HTML, "=====\n";
   my $oFONT = $oTABLE->look_down('_tag', 'font');
+  goto ALL_DONE unless ref($oFONT);
   while ($oFONT->content_list)
     {
     my @ao = $oFONT->splice_content(0, 1);
@@ -268,7 +277,8 @@ sub native_retrieve_some
         $hits_found++;
         } # if
       } # if
-    } # foreach
+    } # while
+ ALL_DONE:
   $oFONT->delete;
   $tree->delete;
   return $hits_found;
