@@ -46,31 +46,34 @@ else
 
 # This query returns 1 page of results:
 $iTest++;
-$oSearch->native_query(WWW::Search::escape_query('"Martin Thu'.'rn" AND Kenner'));
+my $sQuery = '"Martin Thu'.'rn" AND Kenn'.'er';
+$oSearch->native_query(WWW::Search::escape_query($sQuery));
 @aoResults = $oSearch->results();
 $iResults = scalar(@aoResults);
-# print STDERR " + got $iResults Martin Thurn AND Kenner... results\n";
+# print STDERR " + got $iResults results for $sQuery\n";
 if ((2 <= $iResults) && ($iResults <= 49))
   {
   print "ok $iTest\n";
   }
 else
   {
+  print STDERR " --- got $iResults results for $sQuery, but expected 2..49\n";
   print "not ok $iTest\n";
   }
 
 # This query returns a few pages of results:
 $iTest++;
-$oSearch->native_query('dise'.'stablishmentarianism');
+$sQuery = 'dise'.'stablishmentarianism';
+$oSearch->native_query($sQuery);
 @aoResults = $oSearch->results();
 $iResults = scalar(@aoResults);
-# print STDERR " + got $iResults disestabl... results\n";
+# print STDERR " + got $iResults results for $sQuery\n";
 if (51 <= $iResults)
   {
   print "ok $iTest\n";
   }
 else
   {
+  print STDERR " --- got $iResults results for $sQuery, but expected 51..\n";
   print "not ok $iTest\n";
   }
-

@@ -1,6 +1,6 @@
 # Magellan.pm
 # Copyright (c) 1998 by Martin Thurn
-# $Id: Magellan.pm,v 1.18 2000/02/28 19:54:47 mthurn Exp $
+# $Id: Magellan.pm,v 1.19 2000/05/22 16:22:59 mthurn Exp $
 
 =head1 NAME
 
@@ -52,6 +52,10 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 =head1 VERSION HISTORY
 
+=head2 2.06, 2000-05-22
+
+new output format (deleted percent scores)
+
 =head2 2.05, 2000-02-28
 
 new base URL for searches
@@ -92,7 +96,7 @@ require Exporter;
 @EXPORT = qw();
 @EXPORT_OK = qw();
 @ISA = qw(WWW::Search Exporter);
-$VERSION = '2.05';
+$VERSION = '2.06';
 $MAINTAINER = 'Martin Thurn <MartinThurn@iname.com>';
 
 use Carp ();
@@ -192,7 +196,7 @@ sub native_retrieve_some
       # <!--<b>3457804</b> results returned, ranked by relevance.-->
       print STDERR "header line\n" if 2 <= $self->{'_debug'};
       $self->approximate_result_count($1);
-      $state = $PERCENT;
+      $state = $HITS;
       next;
       } # we're in HEADER mode, and line has number of results
     elsif ($state eq $PERCENT &&
@@ -201,11 +205,6 @@ sub native_retrieve_some
       print STDERR "hit percent line\n" if 2 <= $self->{'_debug'};
       # Actual line of input is:
       # 75%
-      if (defined($hit))
-        {
-        push(@{$self->{cache}}, $hit);
-        }
-      $hit = new WWW::SearchResult;
       $hit->score($1);
       $state = $HITS;
       next;
@@ -218,6 +217,11 @@ sub native_retrieve_some
       # Actual line of input:
       #   <B><A HREF="http://www.tez.net/~arthurd/starwars.html">The Star Wars List of Links</A></B>&nbsp;&nbsp;&nbsp;
       # Sometimes there is an \r and/or \n before the </A>
+      if (defined($hit))
+        {
+        push(@{$self->{cache}}, $hit);
+        } # if
+      $hit = new WWW::SearchResult;
       $hit->add_url($1);
       $hit->title($2);
       $self->{'_num_hits'}++;
@@ -229,9 +233,9 @@ sub native_retrieve_some
       {
       print STDERR "hit description line\n" if 2 <= $self->{'_debug'};
       $hit->description($1);
-      $state = $PERCENT;
+      $state = $HITS;
       } # line is description
-    elsif ($state eq $PERCENT && m{\<input\s.*?\sVALUE=\"Next\sResults\"}i)
+    elsif ($state eq $HITS && m{\<input\s.*?\sVALUE=\"Next\sResults\"}i)
       {
       print STDERR " found next button\n" if 2 <= $self->{'_debug'};
       # Actual lines of input are:
