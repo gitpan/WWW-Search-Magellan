@@ -1,6 +1,6 @@
 # Magellan.pm
 # Copyright (c) 1998 by Martin Thurn
-# $Id: Magellan.pm,v 1.21 2000/12/11 14:47:06 mthurn Exp $
+# $Id: Magellan.pm,v 1.22 2001/01/16 14:28:02 mthurn Exp $
 
 =head1 NAME
 
@@ -51,6 +51,10 @@ WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
 =head1 VERSION HISTORY
+
+=head2 2.09, 2001-01-16
+
+handle no-response more gracefully
 
 =head2 2.08, 2000-12-11
 
@@ -104,7 +108,7 @@ require Exporter;
 @EXPORT = qw();
 @EXPORT_OK = qw();
 @ISA = qw(WWW::Search Exporter);
-$VERSION = '2.08';
+$VERSION = '2.09';
 $MAINTAINER = 'Martin Thurn <MartinThurn@iname.com>';
 
 use Carp ();
@@ -188,7 +192,8 @@ sub native_retrieve_some
     return undef;
     }
 
-  print STDERR " *   got response\n" if $self->{'_debug'};
+  print STDERR " +   got response\n" if $self->{'_debug'};
+  print STDERR " + >>>>>>>>>>", $response->content, "<<<<<<<<<<\n" if 8 < $self->{'_debug'};
   $self->{'_next_url'} = undef;
 
   # Parse the output
@@ -237,6 +242,7 @@ sub native_retrieve_some
   # Delete all sub-tables:
   foreach my $oTABLEsub (@aoTABLEsub)
     {
+    next unless ref $oTABLEsub;
     $oTABLEsub->detach;
     $oTABLEsub->delete;
     } # foreach
@@ -279,8 +285,8 @@ sub native_retrieve_some
       } # if
     } # while
  ALL_DONE:
-  $oFONT->delete;
-  $tree->delete;
+  $oFONT->delete if ref($oFONT);
+  $tree->delete if ref($tree);
   return $hits_found;
   } # native_retrieve_some
 
